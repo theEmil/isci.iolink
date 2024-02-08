@@ -1,0 +1,53 @@
+{
+    "mqttIP": "172.21.4.151",
+    "listenOnAllInterfaces": true,
+    "InterfaceWhiteList": [""],
+    "minimunDeviceCount": 1,
+    "logLevel": 1,
+    "dataMap": [
+        {
+            // Obacht: bei eventPattern und dataPattern handelt es sich um RegEx Strings!
+            // Entsprechende EscapeSequenzen beachten (z.B: \\[1\\] statt [1])
+            //
+            // Wildcards für Type deviceData:
+            //      $mqttIP = IP Adresse des MQTT Brokers (oben festgelegt)
+            //      $NameOfStation = NameOfStation des IO-Link Moduls
+            //      $deviceSerial = Seriennummer des IO-Link Moduls
+            //      $deviceID = DeviceID des IO-Link Moduls
+            //
+            // Zusätzliche Wildcards für Type Sensor:
+            //      $sensorSerial = Seriennummer des Sensors
+            //      $sensorDeviceID = DeviceID des Sensors
+            //      $sensorName = Name des Sensors
+            //      $sensorProductName = Produktname des Sensors
+
+            "type": "deviceData",
+            "eventPattern": "/timer\\[2\\]/counter/datachanged",
+            "dataPattern": "/processdatamaster/temperature/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation/temperature",
+            "Port": 8081,
+            "duration": "lifetime"
+        },
+        {
+            "type": "deviceData",
+            "eventPattern": "/timer\\[2\\]/counter/datachanged",
+            "dataPattern": "/processdatamaster/voltage/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation/voltage",
+            "Port": 8081,
+            "duration": "lifetime"
+        },
+        {
+            "type": "deviceData",
+            "eventPattern": "/timer\\[1\\]/counter/datachanged",
+            "dataPattern": "/iolinkmaster/port\\[2\\]/iolinkdevice/pdin/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation_$deviceSerial/Port2",
+            "Port": 8081,
+            "duration": "lifetime"
+        }
+    ],
+    "slowTimerInterval": 500, //ms
+    "fastTimerInterval": 100 //ms
+}

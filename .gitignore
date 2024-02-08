@@ -1,0 +1,11 @@
+# Debugging files
+*.log
+*.pdb
+
+# Visual Studio Code specific folders
+.vscode/
+
+bin/
+obj/
+Anwendungen/
+Datenstrukturen/

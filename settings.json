@@ -1,0 +1,51 @@
+{
+    "mqttIP": "172.21.4.80",
+    "listenOnAllInterfaces": true,
+    "InterfaceWhiteList": [""],
+    "minimunDeviceCount": 1,
+    "logLevel": 1,
+    "dataMap": [
+        {
+            "type": "deviceData",
+            "eventPattern": "/timer\\[2\\]/counter/datachanged",
+            "dataPattern": "/processdatamaster/temperature/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation/temperature",
+            "Port": 1884,
+            "duration": "lifetime",
+            "variableName": "Temperatur_$deviceSerial"
+        },
+        {
+            "type": "deviceData",
+            "eventPattern": "/timer\\[2\\]/counter/datachanged",
+            "dataPattern": "/processdatamaster/voltage/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation/voltage",
+            "Port": 1884,
+            "duration": "lifetime",
+            "variableName": "Spannung_$deviceSerial"
+        },
+        {
+            "type": "sensorData",
+            "eventPattern": "/timer\\[1\\]/counter/datachanged",
+            "dataPattern": "/iolinkmaster/port\\[1\\]/iolinkdevice/pdin/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation_$deviceSerial/Port1",
+            "Port": 1884,
+            "duration": "lifetime",
+            "variableName": "SensorValue__$sensorName_$sensorSerial"
+        },
+        {
+            "type": "sensorData",
+            "eventPattern": "/timer\\[1\\]/counter/datachanged",
+            "dataPattern": "/iolinkmaster/port\\[2\\]/iolinkdevice/pdin/getdata",
+            "MQttBrokerIP": "$mqttIP",
+            "MQTTTopic": "/$NameOfStation_$deviceSerial/Port1",
+            "Port": 1884,
+            "duration": "lifetime",
+            "variableName": "SensorValue_$sensorName_$sensorSerial"
+        }
+    ],
+    "slowTimerInterval": 500,
+    "fastTimerInterval": 100
+}
