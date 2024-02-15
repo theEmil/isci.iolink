@@ -13,7 +13,7 @@
             "MQTTTopic": "/$NameOfStation/temperature",
             "Port": 1884,
             "duration": "lifetime",
-            "variableName": "Temperatur_$deviceSerial"
+            "variableName": "$deviceSerial_Temperatur"
         },
         {
             "type": "deviceData",
@@ -23,7 +23,7 @@
             "MQTTTopic": "/$NameOfStation/voltage",
             "Port": 1884,
             "duration": "lifetime",
-            "variableName": "Spannung_$deviceSerial"
+            "variableName": "$deviceSerial_Spannung"
         },
         {
             "type": "sensorData",
@@ -33,7 +33,7 @@
             "MQTTTopic": "/$NameOfStation_$deviceSerial/Port1",
             "Port": 1884,
             "duration": "lifetime",
-            "variableName": "SensorValue__$sensorName_$sensorSerial"
+            "variableName": "$deviceSerial_SensorValue_$sensorName_$sensorSerial"
         },
         {
             "type": "sensorData",
@@ -43,9 +43,10 @@
             "MQTTTopic": "/$NameOfStation_$deviceSerial/Port1",
             "Port": 1884,
             "duration": "lifetime",
-            "variableName": "SensorValue_$sensorName_$sensorSerial"
+            "variableName": "$deviceSerial_SensorValue_$sensorName_$sensorSerial"
         }
     ],
     "slowTimerInterval": 500,
-    "fastTimerInterval": 100
+    "fastTimerInterval": 100,
+    "pollRate": 100
 }

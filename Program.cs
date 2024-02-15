@@ -4,7 +4,6 @@ using System.Net;
 using System.Threading.Tasks;
 using openDCOSIoLink.Models;
 using openDCOSIoLink.Utilities;
-using openDCOSIoLink.Models.IOLinkDevice;
 using openDCOSIoLink.deviceHandling;
 using openDCOSIoLink.Models.ProfiNetData;
 using openDCOSIoLink.Models.RESTData;
@@ -21,12 +20,15 @@ using System.IO;
 using isci.Allgemein;
 using isci.Daten;
 using isci.Beschreibung;
+using System.Net.Http;
+using openDCOSIoLink.Models.BaseStation;
+using openDCOSIoLink.Models.Device;
 
 namespace openDCOSIoLink
 {
     public class Konfiguration : Parameter
     {
-        
+
         public Konfiguration(string[] args) : base(args)
         {
 
@@ -40,62 +42,55 @@ namespace openDCOSIoLink
         static CaptureDeviceList networkInterfaces = CaptureDeviceList.Instance;
         static Settings settings { get; set; }
         static Konfiguration aktuelleKonfiguration;
+        static Datenmodell dm { get; set; }
+
         public static async Task Main(string[] args)
         {
-            
-            // read settings from settings.json, path to settings.json is given in args
+
+            // Settings einlesen
             string json = File.ReadAllText("settings.json");
             settings = JsonConvert.DeserializeObject<Settings>(json);
 
             // Konfiguration initialisieren
             aktuelleKonfiguration = new Konfiguration(args);
 
-
+            // Geräte suchen, finden und initialisieren
             IOLinkSetup();
 
 
             //Erstellung des Zugriffs auf die dateibasierte Datenstruktur unter Nutzung der Parametrierung.
             Datenstruktur structure = new Datenstruktur(aktuelleKonfiguration);
-            
+
             //Beispiel für die Erstellung eines Datenmodells. Wenn die Parametrierung genutzt wird, wird damit das Kerndatenmodell einer Modulinstanz erstellt mit der Modulinstanzidentifikation.
             //Die Modulinstanz kann auch weitere Datenmodelle erstellen unter Nutzung anderer Konstruktoren, sodass eine andere Identifikation genutzt wird.
-            Datenmodell dm = new Datenmodell(aktuelleKonfiguration);
+            dm = new Datenmodell(aktuelleKonfiguration);
 
 
-            foreach (IOLinkBaseStation item in devHandler.deviceList)
-            {
-                foreach (dataLink data in settings.dataMap)
+            foreach (IoLinkBaseStation baseStation in devHandler.deviceList)
+            {   
+                // Alle Datenwerte die in den Einstellung als deviceData definiert sind, werden in das Datenmodell eingefügt
+                List<dataLink> nonSensorValues = settings.dataMap.FindAll(x => x.type == dataLinkType.deviceData);
+                foreach (dataLink data in nonSensorValues)
                 {
-                    String address = data.dataPattern.Replace("\\[","[").Replace("\\]","]");
+                    String address = data.dataPattern.Replace("\\[", "[").Replace("\\]", "]");
                     String variableName = data.variableName;
-                    //Anlegen eines Dateneintrags und  zum Datenmodell
+                    variableName = baseStation.replaceWildCards(variableName);
 
-                    Format datenFormat = item.getFormatFromAddress(address);
-                    Dateneintrag datenEintrag = null;
-                    if (datenFormat.type == "string")
-                    {
-                        datenEintrag = new dtString("", variableName);
-                    }
-                    else if (datenFormat.type == "number")
-                    {
-                        if (datenFormat.encoding == "integer")
-                        {
-                            datenEintrag = new dtInt32(0, address);
-                        }
-                        else if (datenFormat.encoding == "double")
-                        {
-                            datenEintrag = new dtDouble(0.0, address);
-                        }
-                    }
-                    else{
-                        throw new NotImplementedException("der vom Gerät gelieferte Datentyp für die Variable " + address + " ist noch nicht implementiert");
-                    }
-                    
-                    basicResponse antwort = await item.getValue(address);
-                    
-                    datenEintrag.WertAusString(antwort.data.value);
+                    Dateneintrag tmp = await getDateneintragFromDataLink(baseStation, address, variableName);
 
-                    dm.Dateneinträge.Add(datenEintrag);
+                    dm.Dateneinträge.Add(tmp);
+                }
+
+                // Die Werte aller Sensoren werden in das Datenmodell eingefügt
+                foreach (IoLinkDevice subDevice in baseStation.connectedDevices)
+                {
+                    String address = subDevice.address + "/pdin/getdata";
+                    String variableName = "$deviceSerial_SensorValue_$sensorName_$sensorSerial";
+                    variableName = baseStation.replaceWildCards(variableName, subDevice);
+
+                    Dateneintrag tmp = await getDateneintragFromDataLink(baseStation, address, variableName);
+
+                    dm.Dateneinträge.Add(tmp);
                 }
             }
 
@@ -103,9 +98,6 @@ namespace openDCOSIoLink
 
             //Speichern des Datenmodells im Standardordner als Datei.
             dm.Speichern(aktuelleKonfiguration);
-
-
-
             //Hinzufügen des Datenmodells zur Datenstruktur.
             structure.DatenmodellEinhängen(dm);
             //Hinzufügen aller als Dateien gespeicherte Datenmodelle im Standardordner.
@@ -114,18 +106,16 @@ namespace openDCOSIoLink
             structure.Start();
 
 
+            // im Hintergrund Werte aktualisieren
+            updateSchleife();
+
             //Arbeitsschleife
-            while(true)
+            while (true)
             {
-                structure.Lesen();
-
-                foreach (var Wert in dm.Dateneinträge)
-                {
-                    
-                }
-                
-
+                //structure.Lesen();
                 structure.Schreiben();
+                Console.WriteLine("Daten aktualisiert");
+                System.Threading.Thread.Sleep(1000);
             }
 
 
@@ -134,7 +124,140 @@ namespace openDCOSIoLink
             // TODO: verteilte TODOS abarbeiten
 
         }
-        public async static void IOLinkSetup(){
+
+        // Läuft im Hintergrund und aktualisiert alle pollRate ms die Werte
+        public static async void updateSchleife(){
+            while(true){
+                await singleDatenAktualisieren();
+                System.Threading.Thread.Sleep(settings.pollRate);
+            }
+        }
+
+        // bevorzugte Methode um Daten zu aktualisieren
+        public async static Task<bool> singleDatenAktualisieren(){
+            foreach (IoLinkBaseStation device in devHandler.deviceList)
+            {
+                List<string> dataToGet = new List<string>();
+                foreach (Dateneintrag dt in dm.Dateneinträge)
+                {
+                    if (dt.customTag.Contains(device.serialNumber))
+                    {
+                        string tmp = dt.customTag.Replace(device.serialNumber + ":/", "");
+                        
+                        basicResponse dataResponse = await device.getValue(tmp);
+                        if (dt.type == Datentypen.String)
+                        {
+                            dt.Wert = Convert.ToString(dataResponse.data.value);
+                        }
+                        else if (dt.type == Datentypen.Int64)
+                        {
+                            dt.Wert = Convert.ToInt64(dataResponse.data.value);
+                        }
+                        else if (dt.type == Datentypen.Double)
+                        {
+                            dt.Wert = Convert.ToDouble(dataResponse.data.value);
+                        }
+                        //dt.Wert = dataResponse.data.value;
+                    }
+                }
+            }
+            return true;
+        }
+
+
+        // langsamer als singleDatenAktualisieren
+        public async static Task<bool> multiDatenAktualisieren()
+        {
+            foreach (IoLinkBaseStation device in devHandler.deviceList)
+            {
+                List<string> dataToGet = new List<string>();
+                foreach (Dateneintrag dt in dm.Dateneinträge)
+                {
+                    if (dt.customTag.Contains(device.serialNumber))
+                    {
+                        string tmp = dt.customTag.Replace(device.serialNumber + ":/", "");
+                        tmp = tmp.Replace("/getdata", "");
+                        dataToGet.Add(tmp);
+                    }
+                }
+
+                dataMulti newValues = await device.getDataMulti(dataToGet);
+
+                foreach (Dateneintrag dt in dm.Dateneinträge)
+                {
+                    String address = dt.customTag.Replace(device.serialNumber + ":/", "");
+                    address = address.Replace("/getdata", "");
+
+                    if (newValues.data.ContainsKey(address))
+                    {
+                        if (newValues.data[address].code == HttpStatusCode.OK)
+                        {
+                            if (dt.type == Datentypen.String && newValues.data[address].data.GetType() == typeof(string))
+                            {
+                                dt.Wert = newValues.data[address].data;
+                            }
+                            else if (dt.type == Datentypen.Int64 && newValues.data[address].data.GetType() == typeof(long))
+                            {
+                                dt.Wert = newValues.data[address].data;
+                            }
+                            else if (dt.type == Datentypen.Double && newValues.data[address].data.GetType() == typeof(double))
+                            {
+                                dt.Wert = newValues.data[address].data;
+                            }
+                            else
+                            {
+                                throw new FormatException("Falsche Datentype");
+                            }
+                        }
+                        else
+                        {
+                            throw new HttpRequestException("Fehler beim Abrufen der Variable:" + dt.customTag);
+                        }
+                    }
+                }
+            }
+            return true;
+        }
+        public async static Task<Dateneintrag> getDateneintragFromDataLink(IoLinkBaseStation baseStation, String address, String variableName)
+        {
+
+            Dateneintrag datenEintrag = null;
+
+            //Anlegen eines Dateneintrags und initialisieren des Datentyps
+            Format datenFormat = baseStation.getFormatFromAddress(address);
+            if (datenFormat.type == "string")
+            {
+                datenEintrag = new dtString("", variableName);
+            }
+            else if (datenFormat.type == "number")
+            {
+                if (datenFormat.encoding == "integer")
+                {
+                    datenEintrag = new dtInt64(0, variableName);
+                }
+                else if (datenFormat.encoding == "double")
+                {
+                    datenEintrag = new dtDouble(0.0, variableName);
+                }
+            }
+            else
+            {
+                throw new NotImplementedException("der vom Gerät gelieferte Datentyp (" + datenFormat.type + ") für die Variable " + address + " ist noch nicht implementiert");
+            }
+
+            // Addresse und baseStation der Variable speichern
+            datenEintrag.customTag = baseStation.serialNumber + ":/" + address;
+
+            // Anfangswert festlegen
+            basicResponse antwort = await baseStation.getValue(address);
+            datenEintrag.WertAusString(antwort.data.value);
+
+            return datenEintrag;
+        }
+
+        
+        public static void IOLinkSetup()
+        {
             // ################# IO-Link Setup ############################
 
             // Pcap Interfaces initialisieren und abhören TODO: Interfacewhitelist implementierne
@@ -142,12 +265,118 @@ namespace openDCOSIoLink
 
             // Identifizierungsanfrage senden und Geräte in Liste speichern
             searchAndGetDevices();
+
         }
-        public async static void subscribeWithSettingsMap(){
+
+
+        
+        public static void startCapturing()
+        {
+            // SharpPcap Verison ausgeben
+            var ver = Pcap.SharpPcapVersion;
+            logger.log("SharpPcapVersion: " + ver);
+
+            // Wenn keine Interfaces gefunden wurden, abbrechen
+            if (networkInterfaces.Count < 1)
+            {
+                logger.log("No devices were found on this machine", 3);
+                throw new NullReferenceException("Es konnten keine Netzwerkinterfaces gefunden werden");
+            }
+
+
+            // Alle Interfaces ausgeben
+            logger.log("");
+            logger.log("The following devices are available on this machine:");
+            logger.log("----------------------------------------------------");
+            logger.log("");
+
+            int i = 0;
+
+
+            foreach (var dev in networkInterfaces)
+            {
+                logger.log("{" + i + ", " + dev.Name + ", " + dev.Description + "}");
+                i++;
+            }
+            logger.log("");
+
+
+            // Den Netzwerktraffic auf den gewünschten Interfaces abhören und auf Profinet Pakete prüfen
+            Listener listener = new Listener(logger, devHandler);
+
+            foreach (var @interface in networkInterfaces)
+            {
+                // Register our handler function to the 'packet arrival' event
+                @interface.OnPacketArrival +=
+                   new PacketArrivalEventHandler(listener.onPacketArrival);
+
+                // Open the device for capturing
+                int readTimeoutMilliseconds = 1000;
+                @interface.Open(mode: DeviceModes.Promiscuous | DeviceModes.DataTransferUdp | DeviceModes.NoCaptureLocal, read_timeout: readTimeoutMilliseconds);
+
+                logger.log("");
+                logger.log("-- Listening on " + @interface.Name + ", " + @interface.Description + ", hit 'Enter' to stop...");
+
+                // Start the capturing process
+                @interface.StartCapture();
+            }
+        }
+        
+        // sendet Identifizierungsanfrage über alle Netzwerkinterfaces und wartet auf Antworten
+        // 
+        public static void searchAndGetDevices()
+        {
+            // Indentifizierungsanfrage über alle Netzwerkinterfaces senden
+            foreach (var device in networkInterfaces)
+            {
+                if (device.MacAddress != null)
+                {
+                    // Send the identify request
+                    byte[] identifyRequest = packUtils.getRequestIdentity(device.MacAddress.GetAddressBytes());
+                    device.SendPacket(identifyRequest);
+                }
+
+            }
+
+            // Warten bis die gewünschte Menge an Geräten sich angemeldet hat
+            bool connected = false;
+            int counter = 0;
+            while (!connected && counter < 100)
+            {
+                System.Threading.Thread.Sleep(100);
+                if (devHandler.deviceList.Count > 0)
+                {
+                    connected = true;
+                }
+                counter++;
+            }
+            if (counter >= 100)
+            {
+                logger.log("Es konnten keine Geräte gefunden werden", 3);
+                throw new TimeoutException("Es konnten nach 10 Sekunden Wartezeit keine Io-Link Geräte gefunden werden");
+            }
+
+            // Warten bis Geräteinformationen verfügbar sind
+            foreach (var device in devHandler.deviceList)
+            {
+                while (!device.hasTree())
+                {
+                    System.Threading.Thread.Sleep(100);
+                }
+            }
+
+            // Bei mehreren Netzwerkinterfaces kann es dazu kommen, dass sich ein Gerät mehrfach anmeldet bzw. die Anmeldung zwei mal empfangen wird
+            // In diesem Fall werden die doppelten Geräte aus der Liste entfernt
+            devHandler.removeDuplicates();
+        }
+
+        // erstmal veraltet
+        public async static void subscribeWithSettingsMap()
+        {
             // TODO: Subscribtions auch wieder beenden/löschen können
 
             // Alle Geräte in der Liste durchgehen
-            foreach (IOLinkBaseStation device in devHandler.deviceList)
+            foreach(IoLinkBaseStation device in devHandler.deviceList)
             {
                 // die beiden Timer auf die gewünschten Intervalle setzen
                 //await device.setTimer(1, 1000);
@@ -230,7 +459,7 @@ namespace openDCOSIoLink
                 }
 
                 //TODO: Irgendwas mit den PortDevices machen
-                
+
 
                 //foreach (var portDevice in portDevices)
                 //{
@@ -239,7 +468,7 @@ namespace openDCOSIoLink
                 //    string deviceSerialNumber = null;
                 //    string portDeviceProductName = null;
                 //    basicResponse response = new basicResponse();
-//
+                //
                 //    try
                 //    {
                 //        response = await device.getValue(portDevice + "/vendorid/getdata");
@@ -258,107 +487,14 @@ namespace openDCOSIoLink
                 //        deviceSerialNumber = response.data.value;
                 //        response = await device.getValue(portDevice + "/productname/getdata");
                 //        portDeviceProductName = response.data.value;
-//
+                //
                 //        string vendorName = InfoApi.manufacturerName[vendorID];
                 //        int productVariantID = InfoApi.searchForDevice(vendorName, portDeviceID, portDeviceProductName).productVariantId;
                 //        detailedResult details = InfoApi.getDetails(productVariantID);
                 //    }
                 //}
-                
+
             }
         }
-        public static void startCapturing()
-        {
-            // SharpPcap Verison ausgeben
-            var ver = Pcap.SharpPcapVersion;
-            logger.log("SharpPcapVersion: " + ver);
-
-            // Wenn keine Interfaces gefunden wurden, abbrechen
-            if (networkInterfaces.Count < 1)
-            {
-                logger.log("No devices were found on this machine", 3);
-                return;
-            }
-
-            
-            // Alle Interfaces ausgeben
-            logger.log("");
-            logger.log("The following devices are available on this machine:");
-            logger.log("----------------------------------------------------");
-            logger.log("");
-
-            int i = 0;
-
-
-            foreach (var dev in networkInterfaces)
-            {
-                logger.log("{" + i + ", " + dev.Name + ", " + dev.Description + "}");
-                i++;
-            }
-            logger.log("");
-
-
-            // Den Netzwerktraffic auf den gewünschten Interfaces abhören und auf Profinet Pakete prüfen
-            Listener listener = new Listener(logger, devHandler);
-
-            foreach (var @interface in networkInterfaces)
-            {
-                // Register our handler function to the 'packet arrival' event
-                @interface.OnPacketArrival +=
-                   new PacketArrivalEventHandler(listener.onPacketArrival);
-
-                // Open the device for capturing
-                int readTimeoutMilliseconds = 1000;
-                @interface.Open(mode: DeviceModes.Promiscuous | DeviceModes.DataTransferUdp | DeviceModes.NoCaptureLocal, read_timeout: readTimeoutMilliseconds);
-
-                logger.log("");
-                logger.log("-- Listening on " + @interface.Name + ", " + @interface.Description + ", hit 'Enter' to stop...");
-
-                // Start the capturing process
-                @interface.StartCapture();
-            }
-        }
-
-        public static void searchAndGetDevices()
-        {
-            // Indentifizierungsanfrage über alle Netzwerkinterfaces senden
-            foreach (var device in networkInterfaces)
-            {
-                if (device.MacAddress != null)
-                {
-                    // Send the identify request
-                    byte[] identifyRequest = packUtils.getRequestIdentity(device.MacAddress.GetAddressBytes());
-                    device.SendPacket(identifyRequest);
-                }
-
-            }
-
-            // Warten bis die gewünschte Menge an Geräten sich angemeldet hat
-            bool connected = false;
-            int counter = 0;
-            while (!connected && counter < 100)
-            {
-                System.Threading.Thread.Sleep(100);
-                if (devHandler.deviceList.Count > 0)
-                {
-                    connected = true;
-                }
-                counter++;
-            }
-
-            // Warten bis Geräteinformationen verfügbar sind
-            foreach (var device in devHandler.deviceList)
-            {
-                while (!devHandler.deviceList[0].hasTree())
-                {
-                    System.Threading.Thread.Sleep(100);
-                }
-            }
-
-            // Bei mehreren Netzwerkinterfaces kann es dazu kommen, dass sich ein Gerät mehrfach anmeldet bzw. die Anmeldung zwei mal empfangen wird
-            // In diesem Fall werden die doppelten Geräte aus der Liste entfernt
-            devHandler.removeDuplicates();
-        }
-
     }
 }

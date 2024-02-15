@@ -6,15 +6,15 @@ using openDCOSIoLink.Models;
 using openDCOSIoLink.Models.ProfiNetData;
 using openDCOSIoLink.Models.RESTData;
 using openDCOSIoLink.Utilities;
-using openDCOSIoLink.Models.IOLinkDevice;
 using openDCOSIoLink.Utilities.IODDApi;
+using openDCOSIoLink.Models.BaseStation;
 
 namespace openDCOSIoLink.deviceHandling
 {
     public class deviceHandler
     {
         private Logger logger {get; set;}
-        public List<IOLinkBaseStation> deviceList = new List<IOLinkBaseStation>();
+        public List<IoLinkBaseStation> deviceList = new List<IoLinkBaseStation>();
 
 
         // bei Initialisierung Logger übergeben lassen
@@ -28,7 +28,7 @@ namespace openDCOSIoLink.deviceHandling
         {
 
 
-            IOLinkBaseStation device = new IOLinkBaseStation(logger);
+            IoLinkBaseStation device = new IoLinkBaseStation(logger);
 
             int i = 0;
 
@@ -171,22 +171,22 @@ namespace openDCOSIoLink.deviceHandling
 
         public void removeDuplicates(){
             // doppelt eingetragene Geräte entfernen
-            List<IOLinkBaseStation> uniqueList = deviceList.Distinct(new IOLinkDeviceComparer()).ToList();
+            List<IoLinkBaseStation> uniqueList = deviceList.Distinct(new IOLinkDeviceComparer()).ToList();
             deviceList = uniqueList;
         }
     }
-    public class IOLinkDeviceComparer : IEqualityComparer<IOLinkBaseStation>
+    public class IOLinkDeviceComparer : IEqualityComparer<IoLinkBaseStation>
     {   
         // Prüft ob zwei IOLinkDevices gleich sind
         // Prüft dies anhand der Seriennummer des Geräts
-        public bool Equals(IOLinkBaseStation x, IOLinkBaseStation y)
+        public bool Equals(IoLinkBaseStation x, IoLinkBaseStation y)
         {
             if (x == null || y == null)
                 return false;
 
             return x.serialNumber == y.serialNumber;
         }
-        public int GetHashCode(IOLinkBaseStation obj)
+        public int GetHashCode(IoLinkBaseStation obj)
         {
             return obj.IP.GetHashCode() ^ obj.DeviceID.GetHashCode() ^ obj.Subnet.GetHashCode();
         }

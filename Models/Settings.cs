@@ -12,7 +12,7 @@ namespace openDCOSIoLink.Models.settings{
         public List<dataLink> dataMap { get; set; }
         public int slowTimerIntervall { get; set; }
         public int fastTimerIntervall { get; set; }
-
+        public int pollRate { get; set; }
     }
     public class dataLink{
         // Wildcards für Type deviceData:
