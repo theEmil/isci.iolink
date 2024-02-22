@@ -3,6 +3,7 @@
     <OutputType>Exe</OutputType>
     <TargetFramework>netcoreapp8.0</TargetFramework>
     <RootNamespace>openDCOS_IoLink_Modul</RootNamespace>
+    <DebugType>portable</DebugType>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="SharpPcap" Version="6.2.5"/>

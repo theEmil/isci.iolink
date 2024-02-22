@@ -1,0 +1,99 @@
+
+
+SSH ohne Passwort: https://chrisjhart.com/Windows-10-ssh-copy-id/
+Zu remote deployen: https://learn.microsoft.com/en-us/dotnet/iot/deployment
+Remote Debugging: https://learn.microsoft.com/en-us/dotnet/iot/debugging?tabs=self-contained&pivots=vscode
+
+Folgende Konfigurationen hinzufügen:
+
+Tasks.json
+        {
+            "label": "publishForArm",
+            "command": "dotnet",
+            "type": "process",
+            "args": [
+                "publish",
+                "--runtime",
+                "linux-arm",
+                "--self-contained",
+                "--configuration",
+                "Debug"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "cleanRemote",
+            "dependsOn": "publishForArm",
+            "command": "ssh",
+            "type": "process",
+            "args": [
+                "pi@XXX",
+                "rm -r /home/pi/dotnetDeploy/*"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "copyToRemote",
+            "dependsOn": "cleanRemote",
+            "command": "scp",
+            "type": "process",
+            "args": [
+                "-r",
+                "${workspaceFolder}/bin/Release/netcoreapp8.0/linux-arm/publish/*",
+                "pi@XXX:/home/pi/dotnetDeploy/"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "makeFileExecutable",
+            "dependsOn": "copyToRemote",
+            "command": "ssh",
+            "type": "process",
+            "args": [
+                "pi@XXX",
+                "chmod +x /home/pi/dotnetDeploy/isci.monitor"
+            ],
+            "problemMatcher": "$msCompile"
+        },
+        {
+            "label": "preLaunch",
+            "dependsOn": ["makeFileExecutable"],
+            "type": "shell"
+        }
+
+
+launch.json:
+
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": ".NET Remote Launch - Self-contained",
+            "preLaunchTask": "preLaunch",
+            "type": "coreclr",
+            "request": "launch",
+            "program": "~/dotnetDeploy/isci.monitor",
+            "args": [],
+            "cwd": "~/dotnetDeploy",
+            "stopAtEntry": false,
+            "console": "internalConsole",
+            "justMyCode": false, <- nicht in Tutorial
+            "pipeTransport": {
+                "pipeCwd": "${workspaceRoot}",
+                "pipeProgram": "ssh",
+                "pipeArgs": [
+                    "pi@XXX"
+                ],
+                "debuggerPath": "~/vsdbg/vsdbg"
+            }
+        },
+        {
+            "name": ".NET Core Attach",
+            "type": "coreclr",
+            "request": "attach"
+        }
+    ]
+}

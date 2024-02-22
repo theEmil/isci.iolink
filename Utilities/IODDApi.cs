@@ -55,6 +55,7 @@ namespace openDCOSIoLink.Utilities.IODDApi
             }
             return json;
         }
+        
         public Content searchForDevice(string vendorName = null, string deviceID = null, string productName = null, string productId = null, string ioLinkRev = null){
             // Example https://ioddfinder.io-link.com/productvariants/search?page=0&vendorName=ifm%20electronic%20gmbh&deviceId=722&productName=KI5304&productId=KI5304&ioLinkRev=1.1
             // Build the search URL

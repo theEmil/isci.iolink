@@ -23,6 +23,7 @@ using isci.Beschreibung;
 using System.Net.Http;
 using openDCOSIoLink.Models.BaseStation;
 using openDCOSIoLink.Models.Device;
+using System.Linq;
 
 namespace openDCOSIoLink
 {
@@ -40,15 +41,16 @@ namespace openDCOSIoLink
         static deviceHandler devHandler = new deviceHandler(logger);
         static packageUtils packUtils = new packageUtils();
         static CaptureDeviceList networkInterfaces = CaptureDeviceList.Instance;
+        static List<ILiveDevice> whiteListedInterfaces {get; set;}
         static Settings settings { get; set; }
         static Konfiguration aktuelleKonfiguration;
         static Datenmodell dm { get; set; }
+        static Dictionary<string, Dateneintrag> dateinEintragLinkMap = new Dictionary<string, Dateneintrag>();
 
         public static async Task Main(string[] args)
         {
-
             // Settings einlesen
-            string json = File.ReadAllText("settings.json");
+            string json = File.ReadAllText("/home/pi/settings.json");
             settings = JsonConvert.DeserializeObject<Settings>(json);
 
             // Konfiguration initialisieren
@@ -76,9 +78,10 @@ namespace openDCOSIoLink
                     String variableName = data.variableName;
                     variableName = baseStation.replaceWildCards(variableName);
 
-                    Dateneintrag tmp = await getDateneintragFromDataLink(baseStation, address, variableName);
+                    var tmp = await getDateneintragFromDataLink(baseStation, address, variableName);
 
-                    dm.Dateneinträge.Add(tmp);
+                    dateinEintragLinkMap.Add(tmp.Key, tmp.Value);
+                    dm.Dateneinträge.Add(tmp.Value);
                 }
 
                 // Die Werte aller Sensoren werden in das Datenmodell eingefügt
@@ -88,9 +91,11 @@ namespace openDCOSIoLink
                     String variableName = "$deviceSerial_SensorValue_$sensorName_$sensorSerial";
                     variableName = baseStation.replaceWildCards(variableName, subDevice);
 
-                    Dateneintrag tmp = await getDateneintragFromDataLink(baseStation, address, variableName);
 
-                    dm.Dateneinträge.Add(tmp);
+                    var tmp = await getDateneintragFromDataLink(baseStation, address, variableName);
+
+                    dateinEintragLinkMap.Add(tmp.Key, tmp.Value);
+                    dm.Dateneinträge.Add(tmp.Value);
                 }
             }
 
@@ -138,24 +143,24 @@ namespace openDCOSIoLink
             foreach (IoLinkBaseStation device in devHandler.deviceList)
             {
                 List<string> dataToGet = new List<string>();
-                foreach (Dateneintrag dt in dm.Dateneinträge)
+                foreach (var dt in dateinEintragLinkMap)
                 {
-                    if (dt.customTag.Contains(device.serialNumber))
+                    if (dt.Key.Contains(device.serialNumber))
                     {
-                        string tmp = dt.customTag.Replace(device.serialNumber + ":/", "");
+                        string tmp = dt.Key.Replace(device.serialNumber + ":/", "");
                         
                         basicResponse dataResponse = await device.getValue(tmp);
-                        if (dt.type == Datentypen.String)
+                        if (dt.Value.type == Datentypen.String)
                         {
-                            dt.Wert = Convert.ToString(dataResponse.data.value);
+                            dt.Value.Wert = Convert.ToString(dataResponse.data.value);
                         }
-                        else if (dt.type == Datentypen.Int64)
+                        else if (dt.Value.type == Datentypen.Int64)
                         {
-                            dt.Wert = Convert.ToInt64(dataResponse.data.value);
+                            dt.Value.Wert = Convert.ToInt64(dataResponse.data.value);
                         }
-                        else if (dt.type == Datentypen.Double)
+                        else if (dt.Value.type == Datentypen.Double)
                         {
-                            dt.Wert = Convert.ToDouble(dataResponse.data.value);
+                            dt.Value.Wert = Convert.ToDouble(dataResponse.data.value);
                         }
                         //dt.Wert = dataResponse.data.value;
                     }
@@ -171,11 +176,11 @@ namespace openDCOSIoLink
             foreach (IoLinkBaseStation device in devHandler.deviceList)
             {
                 List<string> dataToGet = new List<string>();
-                foreach (Dateneintrag dt in dm.Dateneinträge)
+                foreach (var dt in dateinEintragLinkMap)
                 {
-                    if (dt.customTag.Contains(device.serialNumber))
+                    if (dt.Key.Contains(device.serialNumber))
                     {
-                        string tmp = dt.customTag.Replace(device.serialNumber + ":/", "");
+                        string tmp = dt.Key.Replace(device.serialNumber + ":/", "");
                         tmp = tmp.Replace("/getdata", "");
                         dataToGet.Add(tmp);
                     }
@@ -183,26 +188,26 @@ namespace openDCOSIoLink
 
                 dataMulti newValues = await device.getDataMulti(dataToGet);
 
-                foreach (Dateneintrag dt in dm.Dateneinträge)
+                foreach (var dt in dateinEintragLinkMap)
                 {
-                    String address = dt.customTag.Replace(device.serialNumber + ":/", "");
+                    String address = dt.Key.Replace(device.serialNumber + ":/", "");
                     address = address.Replace("/getdata", "");
 
                     if (newValues.data.ContainsKey(address))
                     {
                         if (newValues.data[address].code == HttpStatusCode.OK)
                         {
-                            if (dt.type == Datentypen.String && newValues.data[address].data.GetType() == typeof(string))
+                            if (dt.Value.type == Datentypen.String && newValues.data[address].data.GetType() == typeof(string))
                             {
-                                dt.Wert = newValues.data[address].data;
+                                dt.Value.Wert = newValues.data[address].data;
                             }
-                            else if (dt.type == Datentypen.Int64 && newValues.data[address].data.GetType() == typeof(long))
+                            else if (dt.Value.type == Datentypen.Int64 && newValues.data[address].data.GetType() == typeof(long))
                             {
-                                dt.Wert = newValues.data[address].data;
+                                dt.Value.Wert = newValues.data[address].data;
                             }
-                            else if (dt.type == Datentypen.Double && newValues.data[address].data.GetType() == typeof(double))
+                            else if (dt.Value.type == Datentypen.Double && newValues.data[address].data.GetType() == typeof(double))
                             {
-                                dt.Wert = newValues.data[address].data;
+                                dt.Value.Wert = newValues.data[address].data;
                             }
                             else
                             {
@@ -211,14 +216,14 @@ namespace openDCOSIoLink
                         }
                         else
                         {
-                            throw new HttpRequestException("Fehler beim Abrufen der Variable:" + dt.customTag);
+                            throw new HttpRequestException("Fehler beim Abrufen der Variable:" + dt.Key);
                         }
                     }
                 }
             }
             return true;
         }
-        public async static Task<Dateneintrag> getDateneintragFromDataLink(IoLinkBaseStation baseStation, String address, String variableName)
+        public async static Task<KeyValuePair<string, Dateneintrag>> getDateneintragFromDataLink(IoLinkBaseStation baseStation, String address, String variableName)
         {
 
             Dateneintrag datenEintrag = null;
@@ -246,13 +251,12 @@ namespace openDCOSIoLink
             }
 
             // Addresse und baseStation der Variable speichern
-            datenEintrag.customTag = baseStation.serialNumber + ":/" + address;
 
             // Anfangswert festlegen
             basicResponse antwort = await baseStation.getValue(address);
             datenEintrag.WertAusString(antwort.data.value);
 
-            return datenEintrag;
+            return new KeyValuePair<string, Dateneintrag>(baseStation.serialNumber + ":/" + address, datenEintrag);
         }
 
         
@@ -298,13 +302,17 @@ namespace openDCOSIoLink
                 logger.log("{" + i + ", " + dev.Name + ", " + dev.Description + "}");
                 i++;
             }
+
+
+            // Nur Interfaces behalten, die in den Settings angegeben sind
+            whiteListedInterfaces = networkInterfaces.Where(x => settings.InterfaceWhiteList.Contains(x.Name)).ToList();
             logger.log("");
 
 
             // Den Netzwerktraffic auf den gewünschten Interfaces abhören und auf Profinet Pakete prüfen
             Listener listener = new Listener(logger, devHandler);
 
-            foreach (var @interface in networkInterfaces)
+            foreach (var @interface in whiteListedInterfaces)
             {
                 // Register our handler function to the 'packet arrival' event
                 @interface.OnPacketArrival +=
@@ -312,7 +320,8 @@ namespace openDCOSIoLink
 
                 // Open the device for capturing
                 int readTimeoutMilliseconds = 1000;
-                @interface.Open(mode: DeviceModes.Promiscuous | DeviceModes.DataTransferUdp | DeviceModes.NoCaptureLocal, read_timeout: readTimeoutMilliseconds);
+                @interface.Open(read_timeout: readTimeoutMilliseconds);
+                //@interface.Open(mode: DeviceModes.Promiscuous | DeviceModes.DataTransferUdp | DeviceModes.NoCaptureLocal, read_timeout: readTimeoutMilliseconds);
 
                 logger.log("");
                 logger.log("-- Listening on " + @interface.Name + ", " + @interface.Description + ", hit 'Enter' to stop...");
@@ -327,7 +336,7 @@ namespace openDCOSIoLink
         public static void searchAndGetDevices()
         {
             // Indentifizierungsanfrage über alle Netzwerkinterfaces senden
-            foreach (var device in networkInterfaces)
+            foreach (var device in whiteListedInterfaces)
             {
                 if (device.MacAddress != null)
                 {
