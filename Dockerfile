@@ -5,6 +5,9 @@ WORKDIR /app
 COPY ./publish ./
 RUN chmod +x "./openDCOSIoLinkModul"
 
+# Einstellungen übernehmen
+COPY ./settings.json ./settings.json
+
 # Umgebungsvariablen setzen
 ENV "ISCI_Identifikation"="isci.IOLink"
 ENV "ISCI_OrdnerAnwendungen"="/app/Anwendungen"
