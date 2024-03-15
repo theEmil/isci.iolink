@@ -1,5 +1,8 @@
 FROM mcr.microsoft.com/dotnet/runtime:8.0
 
+
+RUN apt-get update && apt-get install -y libpcap-dev
+
 # Working directory anlegen, Dateien kopieren und Berechtigungen setzen
 WORKDIR /app
 COPY ./publish ./
