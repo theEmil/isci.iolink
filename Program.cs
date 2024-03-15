@@ -60,8 +60,8 @@ namespace openDCOSIoLink
             // Geräte suchen, finden und initialisieren
             IOLinkSetup();
 
-
-            //Erstellung des Zugriffs auf die dateibasierte Datenstruktur unter Nutzung der Parametrierung.
+            
+            //Erstellung des Zugriffs auf die dateibasierte Datenstruktur unter Nutzung der Parametrierung
             Datenstruktur datenstruktur = new Datenstruktur(aktuelleKonfiguration);
 
             //Beispiel für die Erstellung eines Datenmodells. Wenn die Parametrierung genutzt wird, wird damit das Kerndatenmodell einer Modulinstanz erstellt mit der Modulinstanzidentifikation.
