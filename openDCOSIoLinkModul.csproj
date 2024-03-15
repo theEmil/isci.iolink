@@ -8,6 +8,6 @@
   <ItemGroup>
     <PackageReference Include="SharpPcap" Version="6.2.5"/>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3"/>
-    <ProjectReference Include="..\isciModul\isci\isci.csproj"/>
+    <ProjectReference Include="..\isci\isci.csproj"/>
   </ItemGroup>
 </Project>

@@ -1,7 +1,7 @@
 {
     "mqttIP": "172.21.4.80",
     "listenOnAllInterfaces": true,
-    "InterfaceWhiteList": ["eth0"],
+    "InterfaceWhiteList": ["\\Device\\NPF_{72B864E5-88F2-431E-B37F-6048F495A2AB}"],
     "minimunDeviceCount": 1,
     "logLevel": 1,
     "dataMap": [

@@ -29,7 +29,8 @@ namespace openDCOSIoLink
 {
     public class Konfiguration : Parameter
     {
-
+        [fromEnv, fromArgs]
+        public int warteZeit;
         public Konfiguration(string[] args) : base(args)
         {
 
@@ -41,7 +42,7 @@ namespace openDCOSIoLink
         static deviceHandler devHandler = new deviceHandler(logger);
         static packageUtils packUtils = new packageUtils();
         static CaptureDeviceList networkInterfaces = CaptureDeviceList.Instance;
-        static List<ILiveDevice> whiteListedInterfaces {get; set;}
+        static List<ILiveDevice> whiteListedInterfaces { get; set; }
         static Settings settings { get; set; }
         static Konfiguration aktuelleKonfiguration;
         static Datenmodell dm { get; set; }
@@ -50,7 +51,7 @@ namespace openDCOSIoLink
         public static async Task Main(string[] args)
         {
             // Settings einlesen
-            string json = File.ReadAllText("/home/pi/settings.json");
+            string json = File.ReadAllText("settings.json");
             settings = JsonConvert.DeserializeObject<Settings>(json);
 
             // Konfiguration initialisieren
@@ -61,7 +62,7 @@ namespace openDCOSIoLink
 
 
             //Erstellung des Zugriffs auf die dateibasierte Datenstruktur unter Nutzung der Parametrierung.
-            Datenstruktur structure = new Datenstruktur(aktuelleKonfiguration);
+            Datenstruktur datenstruktur = new Datenstruktur(aktuelleKonfiguration);
 
             //Beispiel für die Erstellung eines Datenmodells. Wenn die Parametrierung genutzt wird, wird damit das Kerndatenmodell einer Modulinstanz erstellt mit der Modulinstanzidentifikation.
             //Die Modulinstanz kann auch weitere Datenmodelle erstellen unter Nutzung anderer Konstruktoren, sodass eine andere Identifikation genutzt wird.
@@ -69,7 +70,7 @@ namespace openDCOSIoLink
 
 
             foreach (IoLinkBaseStation baseStation in devHandler.deviceList)
-            {   
+            {
                 // Alle Datenwerte die in den Einstellung als deviceData definiert sind, werden in das Datenmodell eingefügt
                 List<dataLink> nonSensorValues = settings.dataMap.FindAll(x => x.type == dataLinkType.deviceData);
                 foreach (dataLink data in nonSensorValues)
@@ -104,12 +105,13 @@ namespace openDCOSIoLink
             //Speichern des Datenmodells im Standardordner als Datei.
             dm.Speichern(aktuelleKonfiguration);
             //Hinzufügen des Datenmodells zur Datenstruktur.
-            structure.DatenmodellEinhängen(dm);
+            datenstruktur.DatenmodellEinhängen(dm);
             //Hinzufügen aller als Dateien gespeicherte Datenmodelle im Standardordner.
-            structure.DatenmodelleEinhängenAusOrdner(aktuelleKonfiguration.OrdnerDatenmodelle);
+            datenstruktur.DatenmodelleEinhängenAusOrdner(aktuelleKonfiguration.OrdnerDatenmodelle);
             //Logischer Start der Datenstruktur.
-            structure.Start();
+            datenstruktur.Start();
 
+            var ausfuehrungsmodell = new Ausführungsmodell(aktuelleKonfiguration, datenstruktur.Zustand);
 
             // im Hintergrund Werte aktualisieren
             updateSchleife();
@@ -117,29 +119,50 @@ namespace openDCOSIoLink
             //Arbeitsschleife
             while (true)
             {
-                //structure.Lesen();
-                structure.Schreiben();
-                Console.WriteLine("Daten aktualisiert");
-                System.Threading.Thread.Sleep(1000);
+                datenstruktur.Zustand.WertAusSpeicherLesen();
+
+                if (ausfuehrungsmodell.AktuellerZustandModulAktivieren()) //Abprüfen, ob das Ausführungsmodell für den Zustandswert die Modulinstanz vorsieht.
+                {
+                    var zustandParameter = (string)ausfuehrungsmodell.ParameterAktuellerZustand(); //Abruf der Parameter für die Ausführung. Ist ein Object und kann in eigene Typen gewandelt werden.
+
+                    switch (zustandParameter)
+                    {
+                        case "E":
+                            {
+                                foreach (var dt in dateinEintragLinkMap)
+                                {
+                                    dt.Value.WertInSpeicherSchreiben();
+                                }
+                                break;
+                            }
+                        case "A":
+                            {
+                                break;
+                            }
+                    }
+
+                    ausfuehrungsmodell.Folgezustand();
+                    datenstruktur.Zustand.WertInSpeicherSchreiben(); //Zustandswert in Datenstruktur übernehmen.
+                }
+
+                System.Threading.Thread.Sleep(aktuelleKonfiguration.warteZeit);
+
             }
-
-
-            // TODO: Restlichen Code auskommentieren
-            // TODO: Loggen überall gleich machen
-            // TODO: verteilte TODOS abarbeiten
-
         }
 
         // Läuft im Hintergrund und aktualisiert alle pollRate ms die Werte
-        public static async void updateSchleife(){
-            while(true){
+        public static async void updateSchleife()
+        {
+            while (true)
+            {
                 await singleDatenAktualisieren();
                 System.Threading.Thread.Sleep(settings.pollRate);
             }
         }
 
         // bevorzugte Methode um Daten zu aktualisieren
-        public async static Task<bool> singleDatenAktualisieren(){
+        public async static Task<bool> singleDatenAktualisieren()
+        {
             foreach (IoLinkBaseStation device in devHandler.deviceList)
             {
                 List<string> dataToGet = new List<string>();
@@ -148,7 +171,7 @@ namespace openDCOSIoLink
                     if (dt.Key.Contains(device.serialNumber))
                     {
                         string tmp = dt.Key.Replace(device.serialNumber + ":/", "");
-                        
+
                         basicResponse dataResponse = await device.getValue(tmp);
                         if (dt.Value.type == Datentypen.String)
                         {
@@ -259,7 +282,7 @@ namespace openDCOSIoLink
             return new KeyValuePair<string, Dateneintrag>(baseStation.serialNumber + ":/" + address, datenEintrag);
         }
 
-        
+
         public static void IOLinkSetup()
         {
             // ################# IO-Link Setup ############################
@@ -273,7 +296,7 @@ namespace openDCOSIoLink
         }
 
 
-        
+
         public static void startCapturing()
         {
             // SharpPcap Verison ausgeben
@@ -330,7 +353,7 @@ namespace openDCOSIoLink
                 @interface.StartCapture();
             }
         }
-        
+
         // sendet Identifizierungsanfrage über alle Netzwerkinterfaces und wartet auf Antworten
         // 
         public static void searchAndGetDevices()
@@ -385,7 +408,7 @@ namespace openDCOSIoLink
             // TODO: Subscribtions auch wieder beenden/löschen können
 
             // Alle Geräte in der Liste durchgehen
-            foreach(IoLinkBaseStation device in devHandler.deviceList)
+            foreach (IoLinkBaseStation device in devHandler.deviceList)
             {
                 // die beiden Timer auf die gewünschten Intervalle setzen
                 //await device.setTimer(1, 1000);
